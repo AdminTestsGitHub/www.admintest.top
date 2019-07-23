@@ -1,0 +1,522 @@
+---
+layout: post
+title:  Runtime 总结
+subtitle:  建立自己的iOS知识体系
+author: AdminTest
+date:   2019-03-13
+catalog:    true
+header-img: "img/.png"
+header-mask: 0.5
+tags:
+    - iOS
+---
+
+>
+终于开始写 `iOS` 了！是时候总结并建立自己的 iOS 知识体系了！
+
+
+### 概述
+
+
+运行时：Objc `runtime`使得`C`具有了面向对象能力，在程序运行时创建，检查，修改类、对象和它们的方法。`runtime`是`C`和汇编编写的。
+
+
+### Class和Object基础数据结构
+
+#### objc_class
+
+```objc
+struct objc_class {
+    Class _Nonnull isa  OBJC_ISA_AVAILABILITY; //isa指针，指向Meta Class，因为Objc类的本身也是一个Object，为了处理这个关系，runtime就创造了Meta Class，当给类发送[NSObject alloc]这样消息时，实际上是把这个消息发给了Class Object
+
+#if !__OBJC2__
+
+    Class _Nullable super_class                              OBJC2_UNAVAILABLE; // 父类
+    const char * _Nonnull name                               OBJC2_UNAVAILABLE; // 类名
+    long version                                             OBJC2_UNAVAILABLE; // 类的版本信息，默认为0
+    long info                                                OBJC2_UNAVAILABLE; // 类信息，供运行期使用的一些位标识
+    long instance_size                                       OBJC2_UNAVAILABLE; // 该类的实例变量大小
+    struct objc_ivar_list * _Nullable ivars                  OBJC2_UNAVAILABLE; // 该类的成员变量链表
+    struct objc_method_list * _Nullable * _Nullable methodLists                    OBJC2_UNAVAILABLE;  // 方法定义的链表
+    struct objc_cache * _Nonnull cache                       OBJC2_UNAVAILABLE; // 方法缓存，对象接到一个消息会根据isa指针查找消息对象，这时会在methodLists中遍历，如果cache了，常用的方法调用时就能够提高调用的效率。
+    struct objc_protocol_list * _Nullable protocols          OBJC2_UNAVAILABLE;  // 协议链表
+#endif
+
+} OBJC2_UNAVAILABLE;
+```
+
+#### objc_ivar_list
+
+```objc
+// objc_ivar_list 结构体存储 objc_ivar 数组列表
+struct objc_ivar_list {
+    int ivar_count                                           OBJC2_UNAVAILABLE;
+#ifdef __LP64__
+
+    int space                                                OBJC2_UNAVAILABLE;
+#endif
+
+    /* variable length structure */
+    struct objc_ivar ivar_list[1]                            OBJC2_UNAVAILABLE;
+}                                                            OBJC2_UNAVAILABLE;
+
+```
+
+#### objc_method_list
+
+```objc
+// objc_method_list结构体存储着 objc_method 的数组列表
+struct objc_method_list {
+    struct objc_method_list * _Nullable obsolete             OBJC2_UNAVAILABLE;
+
+    int method_count                                         OBJC2_UNAVAILABLE;
+#ifdef __LP64__
+
+    int space                                                OBJC2_UNAVAILABLE;
+#endif
+
+    /* variable length structure */
+    struct objc_method method_list[1]                        OBJC2_UNAVAILABLE;
+}                                                            OBJC2_UNAVAILABLE;
+```
+
+#### objc_object
+
+```objc
+/// Represents an instance of a class.
+struct objc_object {
+    Class _Nonnull isa  OBJC_ISA_AVAILABILITY;
+};
+
+/// A pointer to an instance of a class.
+typedef struct objc_object *id;
+```
+
+向object发送消息时:
+```
+[NSObject alloc] -> objc_msgSend(receiver, selector)
+```
+Runtime库会根据object的`isa`指针找到这个**实例object**所属于的**类**，然后在**类**的**方法列表以及父类方法列表**寻找对应的方法运行。`id`是一个`objc_object`结构类型的**指针**，这个类型的对象能够转换成任何一种**对象**。
+
+#### Meta Class
+
+![metaclass](https://upload-images.jianshu.io/upload_images/4349969-7fbe27ecb19e9df3.png?imageMogr2/auto-orient/strip%7CimageView2/2/w/671/format/webp)
+
+
+`meta class`是一个**类对象的类**，当向**对象**发消息，runtime会在这个对象所属类方法列表中查找发送消息对应的**方法**，但当向类发送消息时，runtime就会在这个类的`meta class`方法列表里查找。所有的`meta class`，包括`Root class，Superclass，Subclass`的`isa`都指向`Root class`的`meta class`，这样能够形成一个闭环。
+
+```objc
+void TestMetaClass(id self, SEL _cmd) {
+
+     NSLog(@"This objcet is %p", self);
+     NSLog(@"Class is %@, super class is %@", [self class], [self superclass]);
+
+     Class currentClass = [self class];
+     //
+     for (int i = 0; i < 4; i++) {
+          NSLog(@"Following the isa pointer %d times gives %p", i, currentClass);
+          //通过objc_getClass获得对象isa，这样可以回溯到Root class及NSObject的meta class，可以看到最后指针指向的是0x0和NSObject的meta class类地址一样。
+          currentClass = objc_getClass((__bridge void *)currentClass);
+     }
+
+     NSLog(@"NSObject's class is %p", [NSObject class]);
+     NSLog(@"NSObject's meta class is %p", objc_getClass((__bridge void *)[NSObject class]));
+}
+
+
+@implementation Test
+
+- (void)ex_registerClassPair {
+     Class newClass = objc_allocateClassPair([NSError class], "TestClass", 0);
+     class_addMethod(newClass, @selector(testMetaClass), (IMP)TestMetaClass, "v@:");
+     objc_registerClassPair(newClass);
+     id instance = [[newClass alloc] initWithDomain:@"some domain" code:0 userInfo:nil];
+     [instance performSelector:@selector(testMetaClass)];
+}
+@end
+```
+
+运行结果
+
+```objc
+2019-03-26 10:47:12.483604+0800 ATDemo[2986:44524] This objcet is 0x600003bca340
+2019-03-26 10:47:12.483799+0800 ATDemo[2986:44524] Class is TestClass, super class is NSError
+2019-03-26 10:47:12.483890+0800 ATDemo[2986:44524] Following the isa pointer 0 times gives 0x600003bca3a0
+2019-03-26 10:47:12.483982+0800 ATDemo[2986:44524] Following the isa pointer 1 times gives 0x0
+2019-03-26 10:47:12.484062+0800 ATDemo[2986:44524] Following the isa pointer 2 times gives 0x0
+2019-03-26 10:47:12.484161+0800 ATDemo[2986:44524] Following the isa pointer 3 times gives 0x0
+2019-03-26 10:47:12.484246+0800 ATDemo[2986:44524] NSObject's class is 0x10a345f38
+2019-03-26 10:47:12.484339+0800 ATDemo[2986:44524] NSObject's meta class is 0x0
+
+```
+
+举个例子
+
+```objc
+
+//Class A 继承 NSObjct
+@interface A : NSObject
+@end
+@implementation A
+@end
+
+
+BOOL res1 = [(id)[NSObject class] isKindOfClass:[NSObject class]];
+BOOL res2 = [(id)[NSObject class] isMemberOfClass:[NSObject class]];
+BOOL res3 = [(id)[A class] isKindOfClass:[A class]];
+BOOL res4 = [(id)[A class] isMemberOfClass:[A class]];
+
+NSLog(@"%d %d %d %d", res1, res2, res3, res4);
+
+//输出
+2019-03-26 11:02:34.069336+0800 ATDemo[3378:59212] 1 0 0 0
+
+```
+
+先看看isKindOfClass和isMemberOfClass在Object.mm中的实现
+
+```objc
+- (BOOL)isKindOf:aClass
+{
+     Class cls;
+     for (cls = isa; cls; cls = cls->superclass)
+          if (cls == (Class)aClass)
+               return YES;
+     return NO;
+}
+
+- (BOOL)isMemberOf:aClass
+{
+     return isa == (Class)aClass;
+}
+```
+
+res1中，可以从isKindOfClass看出NSObject class的isa第一次会指向NSObject的Meta Class，接着Super class时会NSObject的Meta Class根据前面讲的闭环可以知道是会指到NSObject class，这样res1的bool值就是真了。
+
+res2的话因为是isMemberOf就只有一次，那么是NSObject的Meta Class和NSObject class不同返回的bool值就是false了。
+
+res3第一次是A Meta Class，第二次super class 后就是NSObject Meta Class了，返回也是false
+
+res4是A Meta Class，所以返回也是false
+
+### 类与对象操作函数
+
+runtime有很多的函数可以操作类和对象。类相关的是class为前缀，对象相关操作是objc或object_为前缀。
+
+#### name
+```objc
+// Returns the name of a class.
+OBJC_EXPORT const char * _Nonnull
+class_getName(Class _Nullable cls) 
+```
+
+#### superClass
+```objc
+// Returns the superclass of a class.
+OBJC_EXPORT Class _Nullable
+class_getSuperclass(Class _Nullable cls) 
+```
+
+#### metaClass
+```objc
+// Returns a Boolean value that indicates whether a class object is a metaclass.
+OBJC_EXPORT BOOL
+class_isMetaClass(Class _Nullable cls) 
+```
+
+#### instanceSize
+```objc
+// Returns the size of instances of a class.
+OBJC_EXPORT size_t
+class_getInstanceSize(Class _Nullable cls) 
+```
+
+#### 成员变量(ivars)及属性
+
+```objc
+// Returns the \c Ivar for a specified instance variable of a given class.
+OBJC_EXPORT Ivar _Nullable
+class_getInstanceVariable(Class _Nullable cls, const char * _Nonnull name)
+
+// Returns the Ivar for a specified class variable of a given class.
+OBJC_EXPORT Ivar _Nullable
+class_getClassVariable(Class _Nullable cls, const char * _Nonnull name) 
+
+// Adds a new instance variable to a class.
+OBJC_EXPORT BOOL
+class_addIvar(Class _Nullable cls, const char * _Nonnull name, size_t size, 
+              uint8_t alignment, const char * _Nullable types) 
+
+// Describes the instance variables declared by a class.
+OBJC_EXPORT Ivar _Nonnull * _Nullable
+class_copyIvarList(Class _Nullable cls, unsigned int * _Nullable outCount) 
+
+// Returns the \c Ivar for a specified instance variable of a given class.
+OBJC_EXPORT Ivar _Nullable
+class_getInstanceVariable(Class _Nullable cls, const char * _Nonnull name)
+
+// Returns the Ivar for a specified class variable of a given class.
+OBJC_EXPORT Ivar _Nullable
+class_getClassVariable(Class _Nullable cls, const char * _Nonnull name) 
+
+// Adds a new instance variable to a class.
+OBJC_EXPORT BOOL
+class_addIvar(Class _Nullable cls, const char * _Nonnull name, size_t size, 
+              uint8_t alignment, const char * _Nullable types) 
+
+// Describes the instance variables declared by a class.
+OBJC_EXPORT Ivar _Nonnull * _Nullable
+class_copyIvarList(Class _Nullable cls, unsigned int * _Nullable outCount) 
+```
+
+#### methodLists
+
+```objc
+// Adds a new method to a class with a given name and implementation.
+OBJC_EXPORT BOOL
+class_addMethod(Class _Nullable cls, SEL _Nonnull name, IMP _Nonnull imp, 
+                const char * _Nullable types)                        
+// Returns a specified instance method for a given class.
+OBJC_EXPORT Method _Nullable
+class_getInstanceMethod(Class _Nullable cls, SEL _Nonnull name)  
+
+// Returns a pointer to the data structure describing a given class method for a given class.
+OBJC_EXPORT Method _Nullable
+class_getClassMethod(Class _Nullable cls, SEL _Nonnull name)     
+
+// Describes the instance methods implemented by a class.
+OBJC_EXPORT Method _Nonnull * _Nullable
+class_copyMethodList(Class _Nullable cls, unsigned int * _Nullable outCount)   
+
+// Replaces the implementation of a method for a given class. 
+OBJC_EXPORT IMP _Nullable
+class_replaceMethod(Class _Nullable cls, SEL _Nonnull name, IMP _Nonnull imp, 
+                    const char * _Nullable types)     
+
+// Returns the function pointer that would be called if a 
+// particular message were sent to an instance of a class.
+OBJC_EXPORT IMP _Nullable
+class_getMethodImplementation(Class _Nullable cls, SEL _Nonnull name)       
+
+// Returns the function pointer that would be called if a particular 
+// message were sent to an instance of a class.
+OBJC_EXPORT IMP _Nullable
+class_getMethodImplementation_stret(Class _Nullable cls, SEL _Nonnull name)   
+
+// Returns a Boolean value that indicates whether instances of a class respond to a particular selector.
+OBJC_EXPORT BOOL
+class_respondsToSelector(Class _Nullable cls, SEL _Nonnull sel)           
+```
+
+#### objc_protocol_list
+
+```objc
+/// Adds a protocol to a class.
+OBJC_EXPORT BOOL
+class_addProtocol(Class _Nullable cls, Protocol * _Nonnull protocol) 
+
+/// Returns a Boolean value that indicates whether a class conforms to a given protocol.
+OBJC_EXPORT BOOL
+class_conformsToProtocol(Class _Nullable cls, Protocol * _Nullable protocol) 
+
+/// Describes the protocols adopted by a class.
+OBJC_EXPORT Protocol * __unsafe_unretained _Nonnull * _Nullable 
+class_copyProtocolList(Class _Nullable cls, unsigned int * _Nullable outCount)
+```
+
+#### version
+
+```objc
+// Returns the version number of a class definition.
+OBJC_EXPORT int
+class_getVersion(Class _Nullable cls)
+
+// Sets the version number of a class definition.
+OBJC_EXPORT void
+class_setVersion(Class _Nullable cls, int version)
+```
+
+#### 示例
+
+```objc
+//-----------------------------------------------------------
+// MyClass.h
+@interface MyClass : NSObject <NSCopying, NSCoding>
+@property (nonatomic, strong) NSArray *array;
+@property (nonatomic, copy) NSString *string;
+- (void)method1;
+- (void)method2;
++ (void)classMethod1;
+@end
+//-----------------------------------------------------------
+// MyClass.m
+
+#import "MyClass.h"
+@interface MyClass () {
+NSInteger _instance1;
+NSString * _instance2;
+}
+@property (nonatomic, assign) NSUInteger integer;
+- (void)method3WithArg1:(NSInteger)arg1 arg2:(NSString *)arg2;
+@end
+@implementation MyClass
++ (void)classMethod1 {
+}
+- (void)method1 {
+     NSLog(@"call method method1");
+}
+- (void)method2 {
+}
+- (void)method3WithArg1:(NSInteger)arg1 arg2:(NSString *)arg2 {
+     NSLog(@"arg1 : %ld, arg2 : %@", arg1, arg2);
+}
+@end
+//-----------------------------------------------------------
+// main.h
+#import "MyClass.h"
+#import "MySubClass.h"
+#import <objc/runtime.h>
+int main(int argc, const char * argv[]) {
+     @autoreleasepool {
+          MyClass *myClass = [[MyClass alloc] init];
+          unsigned int outCount = 0;
+          Class cls = myClass.class;
+          // 类名
+          NSLog(@"class name: %s", class_getName(cls));    
+          NSLog(@"==========================================================");
+          // 父类
+          NSLog(@"super class name: %s", class_getName(class_getSuperclass(cls)));
+          NSLog(@"==========================================================");
+          // 是否是元类
+          NSLog(@"MyClass is %@ a meta-class", (class_isMetaClass(cls) ? @"" : @"not"));
+          NSLog(@"==========================================================");
+          Class meta_class = objc_getMetaClass(class_getName(cls));
+          NSLog(@"%s's meta-class is %s", class_getName(cls), class_getName(meta_class));
+          NSLog(@"==========================================================");
+          // 变量实例大小
+          NSLog(@"instance size: %zu", class_getInstanceSize(cls));
+          NSLog(@"==========================================================");
+          // 成员变量
+          Ivar *ivars = class_copyIvarList(cls, &outCount);
+          for (int i = 0; i < outCount; i++) {
+               Ivar ivar = ivars[i];
+               NSLog(@"instance variable's name: %s at index: %d", ivar_getName(ivar), i);
+          }
+          free(ivars);
+          Ivar string = class_getInstanceVariable(cls, "_string");
+          if (string != NULL) {
+               NSLog(@"instace variable %s", ivar_getName(string));
+          }
+          NSLog(@"==========================================================");
+          // 属性操作
+          objc_property_t * properties = class_copyPropertyList(cls, &outCount);
+          for (int i = 0; i < outCount; i++) {
+               objc_property_t property = properties[i];
+               NSLog(@"property's name: %s", property_getName(property));
+          }
+          free(properties);
+          objc_property_t array = class_getProperty(cls, "array");
+          if (array != NULL) {
+               NSLog(@"property %s", property_getName(array));
+          }
+          NSLog(@"==========================================================");
+          // 方法操作
+          Method *methods = class_copyMethodList(cls, &outCount);
+          for (int i = 0; i < outCount; i++) {
+               Method method = methods[i];
+               NSLog(@"method's signature: %s", method_getName(method));
+          }
+          free(methods);
+          Method method1 = class_getInstanceMethod(cls, @selector(method1));
+          if (method1 != NULL) {
+               NSLog(@"method %s", method_getName(method1));
+          }
+          Method classMethod = class_getClassMethod(cls, @selector(classMethod1));
+          if (classMethod != NULL) {
+               NSLog(@"class method : %s", method_getName(classMethod));
+          }
+          NSLog(@"MyClass is%@ responsd to selector: method3WithArg1:arg2:", class_respondsToSelector(cls, @selector(method3WithArg1:arg2:)) ? @"" : @" not");
+          IMP imp = class_getMethodImplementation(cls, @selector(method1));
+          imp();
+          NSLog(@"==========================================================");
+          // 协议
+          Protocol * __unsafe_unretained * protocols = class_copyProtocolList(cls, &outCount);
+          Protocol * protocol;
+          for (int i = 0; i < outCount; i++) {
+               protocol = protocols[i];
+               NSLog(@"protocol name: %s", protocol_getName(protocol));
+          }
+          NSLog(@"MyClass is%@ responsed to protocol %s", class_conformsToProtocol(cls, protocol) ? @"" : @" not", protocol_getName(protocol));
+          NSLog(@"==========================================================");
+     }
+     return 0;
+}
+```
+
+输出
+
+```objc
+2019-03-27 16:53:43.843090+0800 ATDemo[4757:112008] class name: MyClass
+2019-03-27 16:53:43.843258+0800 ATDemo[4757:112008] ==========================================================
+2019-03-27 16:53:43.843347+0800 ATDemo[4757:112008] super class name: NSObject
+2019-03-27 16:53:43.843421+0800 ATDemo[4757:112008] ==========================================================
+2019-03-27 16:53:43.843495+0800 ATDemo[4757:112008] MyClass is not a meta-class
+2019-03-27 16:53:43.843575+0800 ATDemo[4757:112008] ==========================================================
+2019-03-27 16:53:43.843697+0800 ATDemo[4757:112008] MyClass's meta-class is MyClass
+2019-03-27 16:53:43.843794+0800 ATDemo[4757:112008] ==========================================================
+2019-03-27 16:53:43.843887+0800 ATDemo[4757:112008] instance size: 48
+2019-03-27 16:53:43.843974+0800 ATDemo[4757:112008] ==========================================================
+2019-03-27 16:53:43.844179+0800 ATDemo[4757:112008] instance variable's name: _instance1 at index: 0
+2019-03-27 16:53:43.844444+0800 ATDemo[4757:112008] instance variable's name: _instance2 at index: 1
+2019-03-27 16:53:43.844669+0800 ATDemo[4757:112008] instance variable's name: _array at index: 2
+2019-03-27 16:53:43.844891+0800 ATDemo[4757:112008] instance variable's name: _string at index: 3
+2019-03-27 16:53:43.845097+0800 ATDemo[4757:112008] instance variable's name: _integer at index: 4
+2019-03-27 16:53:43.845310+0800 ATDemo[4757:112008] instace variable _string
+2019-03-27 16:53:43.845499+0800 ATDemo[4757:112008] ==========================================================
+2019-03-27 16:53:43.850609+0800 ATDemo[4757:112008] property's name: integer
+2019-03-27 16:53:43.850728+0800 ATDemo[4757:112008] property's name: array
+2019-03-27 16:53:43.850820+0800 ATDemo[4757:112008] property's name: string
+2019-03-27 16:53:43.850890+0800 ATDemo[4757:112008] property array
+2019-03-27 16:53:43.850964+0800 ATDemo[4757:112008] ==========================================================
+2019-03-27 16:53:43.851054+0800 ATDemo[4757:112008] method's signature: method1
+2019-03-27 16:53:43.851138+0800 ATDemo[4757:112008] method's signature: method3WithArg1:arg2:
+2019-03-27 16:53:43.851222+0800 ATDemo[4757:112008] method's signature: method2
+2019-03-27 16:53:43.851394+0800 ATDemo[4757:112008] method's signature: integer
+2019-03-27 16:53:43.851663+0800 ATDemo[4757:112008] method's signature: setInteger:
+2019-03-27 16:53:43.851986+0800 ATDemo[4757:112008] method's signature: setArray:
+2019-03-27 16:53:43.852254+0800 ATDemo[4757:112008] method's signature: .cxx_destruct
+2019-03-27 16:53:43.852518+0800 ATDemo[4757:112008] method's signature: array
+2019-03-27 16:53:43.852807+0800 ATDemo[4757:112008] method's signature: setString:
+2019-03-27 16:53:43.853095+0800 ATDemo[4757:112008] method's signature: string
+2019-03-27 16:53:43.853386+0800 ATDemo[4757:112008] method method1
+2019-03-27 16:53:43.853645+0800 ATDemo[4757:112008] class method : classMethod1
+2019-03-27 16:53:43.853976+0800 ATDemo[4757:112008] MyClass is responsd to selector: method3WithArg1:arg2:
+2019-03-27 16:53:43.854518+0800 ATDemo[4757:112008] call method method1
+2019-03-27 16:53:43.854612+0800 ATDemo[4757:112008] ==========================================================
+2019-03-27 16:53:43.854828+0800 ATDemo[4757:112008] protocol name: NSCopying
+2019-03-27 16:53:43.855082+0800 ATDemo[4757:112008] protocol name: NSCoding
+2019-03-27 16:53:43.855306+0800 ATDemo[4757:112008] MyClass is responsed to protocol NSCoding
+2019-03-27 16:53:43.855469+0800 ATDemo[4757:112008] ==========================================================
+
+```
+
+### 成员变量与属性
+
+
+### Method和消息
+
+
+### Protocol和Category
+
+
+### Block
+
+
+### Runtime的应用
+
+
+### 参考资料
+
+[星光社-戴铭的博客：Objc Runtime 总结](http://www.starming.com/2015/04/01/objc-runtime/)
+
+

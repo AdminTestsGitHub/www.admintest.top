@@ -1,0 +1,46 @@
+---
+layout: post
+title:  Agile
+subtitle:   "Agile Tool Chains"
+author: AdminTest
+date:   2019-02-25
+catalog:    true
+header-img: ""
+header-mask: 0.6
+tags:
+    - Agile
+    - Other
+---
+
+
+### 2019-02-25 Agile
+
+
+[//]: #    * [Jira](https://jirait.bmw-brilliance.cn)
+
+
+<ui>
+<li><a href="https://jirait.bmw-brilliance.cn/" target="_blank">Jira</a></li>
+<li><a href="https://confluenceit.bmw-brilliance.cn/display/BT" target="_blank">Confluence</a></li>
+<li><a href="https://bitbucket.bmw-brilliance.cn/bitbucket/projects" target="_blank">BitBucket</a></li>
+<li><a href="https://jenkins.bba-app.com" target="_blank"> Jenkins</a></li>
+<li><a href="https://sonar.bba-app.com" target="_blank"> SonarQube</a></li>
+<li><a href="https://nexus.bba-app.com" target="_blank"> Nexus</a></li>
+<li><a href="https://registry.bba-app.com" target="_blank"> Harbor</a></li>
+<li><a href="https://zabbix.bba-app.com" target="_blank"> Zabbix</a></li>
+<li><a href="https://arachni.bba-app.com" target="_blank"> Arachni</a></li>
+
+</ui>
+
+<ui>
+<li><a href="https://devmaster.bmwbrill.cn:8443/" target="_blank">OpenSihft for INT</a></li>
+<li><a href="https://devmaster.bmwbrill.cn:8443/" target="_blank">OpenSihft for UAT</a></li>
+<li><a href="https://master.bmwbrill.cn:8443/" target="_blank">OpenSihft for Prod</a></li>
+</ui>
+
+
+<ui>
+<li><a href="https://swagger.bba-app.com/editor/" target="_blank">API Editor</a></li>
+<li><a href="https://swagger.bba-app.com/ui/" target="_blank">API Browser</a></li>
+<li><a href="https://swagger.bba-app.com" target="_blank">API Storehouse</a></li>
+</ui>

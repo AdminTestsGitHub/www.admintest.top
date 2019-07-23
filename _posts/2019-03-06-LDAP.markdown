@@ -1,0 +1,80 @@
+---
+layout: post
+title:  LDAP
+subtitle:   "Lightweight Directory Access Protocol"
+author: AdminTest
+date:   2019-03-06
+catalog:    true
+header-img: ""
+header-mask: 0.6
+tags:
+    - LDAP
+    - Other
+---
+
+#### 解释
+
+LDAP是轻量目录访问协议，英文全称是`Lightweight Directory Access Protocol`，一般都简称为LDAP。
+
+#### 目录数据库
+
+目录数据库是一个为查询、浏览和搜索而优化的数据库，它成树状结构组织数据，类似文件目录一样。
+
+目录数据库和关系数据库不同，它有优异的读性能，但写性能差，并且没有事务处理、回滚等复杂功能，不适于存储修改频繁的数据。所以目录天生是用来查询的，就好象它的名字一样。
+
+LDAP目录服务是由目录数据库和一套访问协议组成的系统。
+
+首先LDAP是一种通讯协议，LDAP支持TCP/IP。协议就是标准，并且是抽象的。在这套标准下，`AD（Active Directory）`是微软出的一套实现。
+
+#### AD
+
+那AD是什么呢？暂且把它理解成是个数据库。也有很多人直接把LDAP说成数据库(可以把LDAP理解成存储数据的数据库)。像是其他数据库一样，LDAP也是有client端和server端。server端是用来存放资源，client端用来操作增删改查等操作。
+而我们通常说的LDAP是指运行这个数据库的服务器。
+
+可以简单理解AD = LDAP服务器＋LDAP应用。
+
+我们知道，像MySQL数据库，数据都是按记录一条条记录存在表中。而LDAP数据库，是树结构的，数据存储在叶子节点上。看看下面的比喻：
+
+>** 
+假设你要树上的一个苹果（一条记录），你怎么告诉园丁它的位置呢？当然首先要说明是哪一棵树（dc，相当于MYSQL的DB），然后是从树根到那个苹果所经过的所有“分叉”（ou），最后就是这个苹果的名字（uid，相当于MySQL表主键id）。好了！这时我们可以清晰的指明这个苹果的位置了。
+
+#### 总结
+总结一下LDAP树形数据库如下：
+* [dn] ：一条记录的详细位置
+* [dc] ：一条记录所属区域    (哪一颗树)
+* [ou] ：一条记录所属组织    （哪一个分支）
+* [cn/uid] ：一条记录的名字/ID   (哪一个苹果名字)
+LDAP目录树的最顶部就是根，也就是所谓的“基准DN"。
+
+
+最后总结一下LDAP：
+* LDAP的结构用树来表示，而不是用表格。正因为这样，就不能用SQL语句了。
+* LDAP可以很快地得到查询结果，不过在写方面，就慢得多。
+* LDAP提供了静态数据的快速查询方式。
+* Client/server模型，Server 用于存储数据，Client提供操作目录信息树的工具。
+* LDAP是一种开放Internet标准，LDAP协议是跨平台的Interent协议。
+
+
+
+#### 关于新的ruby源替换（最新）
+15年之前使用ruby很大概率是使用的淘宝源`http://ruby.taobao.org/`，但在此之后，我们发现淘宝源没有再接着维护了，于是我们换成国内的ruby官方源`https://gems.ruby-china.org/`，但我们现在使用发现这个源的链接也出现问题，无法连接上这个源，
+
+添加国内ruby源 
+
+```
+gem sources --add https://gems.ruby-china.org
+```
+
+报错：
+```
+Error fetching https://gems.ruby-china.org/:
+
+bad response Not Found 404 (https://gems.ruby-china.org/specs.4.8.gz)
+```
+
+这其实是国内的ruby源的域名进行了更换，我们只需要将`".org"`改为`".com"`即可重新连接国内的ruby源
+
+具体命令替换为 ```gem sources --add https://gems.ruby-china.com ```则解决问题
+
+
+

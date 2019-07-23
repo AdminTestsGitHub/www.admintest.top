@@ -1,0 +1,175 @@
+---
+layout: post
+title:  MQTT
+subtitle:   "物联网，低功耗"
+author: AdminTest
+date:   2019-03-11
+catalog:    true
+header-img: "img/post-bg-mqtt.png"
+header-mask: 0.6
+tags:
+    - iOS
+    - MQTT
+---
+
+#### 解释
+
+MQTT是一个轻量的发布订阅模式消息传输协议，专门针对低带宽和不稳定网络环境的物联网应用设计。
+
+MQTT官网：[http://mqtt.org](http://mqtt.org)
+
+MQTT V3.1.1协议规范：[http://docs.oasis-open.org/mqtt/mqtt/v3.1.1/os/mqtt-v3.1.1-os.html](http://docs.oasis-open.org/mqtt/mqtt/v3.1.1/os/mqtt-v3.1.1-os.html)
+
+#### 特点
+
+* 开放消息协议，简单易实现
+* 发布订阅模式，一对多消息发布
+* 基于TCP/IP网络连接
+* 1字节固定报头，2字节心跳报文，报文结构紧凑
+* 消息QoS支持，可靠传输保证
+
+#### 应用
+
+MQTT协议广泛应用于物联网、移动互联网、智能硬件、车联网、电力能源等领域。
+
+* 物联网M2M通信，物联网大数据采集
+* Android消息推送，WEB消息推送
+* 移动即时消息，例如Facebook Messenger
+* 智能硬件、智能家具、智能电器
+* 车联网通信，电动车站桩采集
+* 智慧城市、远程医疗、远程教育
+* 电力、石油与能源等行业市场
+
+#### MQTT基于主题(Topic)消息路由
+
+MQTT协议基于主题(Topic)进行消息路由，主题(Topic)类似URL路径，例如:
+
+```
+chat/room/1
+
+sensor/10/temperature
+
+sensor/+/temperature
+
+$SYS/broker/metrics/packets/received
+
+$SYS/broker/metrics/#
+```
+
+主题(Topic)通过’/’分割层级，支持’+’, ‘#’通配符:
+
+```
+'+': 表示通配一个层级，例如a/+，匹配a/x, a/y
+
+'#': 表示通配多个层级，例如a/#，匹配a/x, a/b/c/d
+```
+
+订阅者与发布者之间通过主题路由消息进行通信，例如采用mosquitto命令行发布订阅消息:
+
+``` 
+mosquitto_sub -t a/b/+ -q 1
+
+mosquitto_pub -t a/b/c -m hello -q 1
+```
+
+**`注解：订阅者可以订阅含通配符主题，但发布者不允许向含通配符主题发布消息。`**
+
+#### MQTT消息QoS
+MQTT发布消息QoS保证不是端到端的，是客户端与服务器之间的。订阅者收到MQTT消息的QoS级别，最终取决于发布消息的QoS和主题订阅的QoS。
+
+###### Qos0
+![avatar](http://www.emqtt.com/docs/v2/_images/qos0_seq.png)
+###### Qos1
+![avatar](http://www.emqtt.com/docs/v2/_images/qos1_seq.png)
+###### Qos2
+![avatar](http://www.emqtt.com/docs/v2/_images/qos2_seq.png)
+
+
+#### MQTT与XMPP协议对比
+
+<ol>
+<li>MQTT协议一个字节固定报头，两个字节心跳报文，报文体积小编解码容易。XMPP协议基于繁重的XML，报文体积大且交互繁琐。</li>
+<li>MQTT协议未定义报文内容格式，可以承载JSON、二进制等不同类型报文。XMPP协议采用XML承载报文，二进制必须Base64编码等处理。</li>
+<li>MQTT协议支持消息收发确认和QoS保证，XMPP主协议并未定义类似机制。MQTT协议有更好的消息可靠性保证。</li>
+</ol>
+
+#### IM场景雏形
+
+##### 场景1，用户A请求加用户B为好友，并进行一对一聊天
+
+方案一，使用 p2p 消息。
+优点是无需双方提前订阅（其实 p2p 功能也是通过订阅来实现的，只是用户在使用时无感知），缺点是如果DeviceID_B同时收到多个好友申请（见2），如何分辨是谁发送的请求呢？
+从消息 Topic 是无法得知的，只能通过解析 message body 来辨识。
+
+注意，p2p 消息，二级 Topic 必须是 p2p 字样，三级Topic是目标设备的 Client ID。
+
+![avatar](http://i.imgur.com/XI2YZdn.png)
+
+方案二，给每一个用户设计一个 Inbox，每个用户在客户端登录时都要订阅自己的 Inbox。
+优点是每个用户收到消息时，可以通过解析 Topic 知道是谁要加他为好友，也能知道谁通过了他的好友添加请求。
+当 USER B 收到消息 IMS/UserB/Inbox/Add/GFReq/UserA (见4)，就知道是来自于 USER A 的好友添加请求。
+当 USER A 收到消息 IMS/UserA/Inbox/Add/GFResp/UserB (见6)，就知道是来自于 USER B 的反馈。
+
+![avatar](http://i.imgur.com/LkAzQZv.png)
+
+##### 场景2，用户A关注好友B动态，B更新朋友圈，A收到更新
+
+用户 A 想关注好友 B 的朋友圈动态，可以订阅 IMS/UserB (见1)。
+好友 B 有好东东想晒一下，可以发布 IMS/UserB (见2)，发布之后，所有订阅 IMS/UserB 的好友都可以看见这条分享（MQ MQTT 会负责将消息发送给所有订阅的好友）。
+如果 A 不想看 B 的朋友圈动态了，那么就取消订阅 IMS/UserB (见4)。
+
+![avatar](http://i.imgur.com/LkAzQZv.png)
+
+如果是 B 不想让 A 看见自己晒的东东，该怎么办呢？
+也可以利用 Inbox。
+用户 A 登录时订阅 IMS/UserA/Inbox/Update/# （见2）
+用户 B 发送一条消息到 IMS/UserA/Inbox/Update/UserB/Unsub （见3），A 在收到这条消息后，取消订阅 IMS/UserB (见5)，在此之后，B 在朋友圈所有的分享，好友 A 都是看不到的。
+当然，A 在收到 B 的取消订阅请求（见4）后，是弹窗通知到 A 本人（让 A 知晓被 B 拉黑）还是静默（A 被默默拉进 B 的黑名单），就完全由应用设计来决定了。
+
+![avatar](http://i.imgur.com/HG2SDd6.png)
+
+##### 场景3，用户A邀请B,C好友进行群聊（B,C非好友关系）
+
+群聊创建者 A 首先要订阅 IMS/Group123/# （见1）。
+邀请用户 B, C 加入群聊，可以使用 p2p 消息（见2，4）。
+用户 B, C 同意加入群聊，订阅 IMS/Group123/# （见6，7）。
+加入群聊组中的成员 B 想要发言，可以携带自己的身份信息发布到 IMS/Group123/UserB （见8）, 这样一来，所有订阅 IMS/Group123/# 的成员都能看到 B 的这条发言了。
+
+![avatar](http://i.imgur.com/5M84VbB.png)
+
+##### 场景4，逢年过节，给多个好友发送祝福信息（群发消息，不是群聊噢）
+
+可以逐一给好友发送 p2p 消息，或者发送消息到各好友的 Inbox 中。
+这种方式的缺点是需要多次 Publish，有几个好友，就需要 publish 几次（见4，6）。
+
+![avatar](http://i.imgur.com/9LACIXf.png)
+
+不想 publish 多次，该怎么办呢？ 
+Sorry，目前确实没有更好的办法。
+
+其实我们希望可以创建一个虚拟 Group，好友们不用显示订阅这个 Group，由系统根据业务配置动态创建订阅关系。完成的效果是，好友们能收到发送给这个 Group 的消息，但是不会意识到这个 Group 的存在，因为客户端没有发起过订阅虚拟 Group 的动作（原理类似 p2p 订阅）。
+
+目前 MQ MQTT 还不支持这样的功能，我们期待后续它可以提供这样功能的 Plugin，方便业务端扩展更多功能。
+
+##### 场景5，商业推广，系统给不同种类/定位的用户推送消息
+
+想给不同地域的用户推送系统的新年祝福，消息的内容根据用户地域不同而变化。
+正如之前的群发场景一样，使用 p2p 或者 Inbox 固然可以做到，但是整个系统，那么多用户，逐一发送并不是理想的方式。
+而目前 MQ MQTT 又不支持虚拟 Group，如何完成这个功能呢？
+业务设计之初，预留一个给系统广播使用的 Topic, 比如 IMS/System，每一个用户除了订阅自己的 Inbox，好友之外，也要根据自己的属地订阅系统预留的 Topic （见1，2）。
+如：
+北京用户订阅 IMS/System/Beijing
+杭州用户订阅 IMS/System/Hangzhou
+
+系统发送一条消息到 IMS/System/Beijing（见3）, 所有北京用户都会收到（见4），系统发送一条消息到 IMS/System/Hangzhou（见5）, 所有杭州用户都会收到这条消息（见6）。
+
+![avatar](http://i.imgur.com/gY57X3J.png)
+
+用户登录客户端时，业务应用就需要预先判断其属地，并订阅相应的预留 Topic。
+这种方案其实不够灵活，因为当后续扩展新业务功能时，程序需要升级（订阅新的 Topic 来满足新业务），但就目前来说，这也不失为一种可行的解决方案了。
+
+#### 参考资料
+
+[EMQ 文档](http://www.emqtt.com/docs/v2/mqtt.html#id2)
+
+[利用消息队列MQTT，打造一款属于自己的IM社交软件](https://yq.aliyun.com/articles/68390)
